@@ -1,0 +1,152 @@
+---
+
+author: whiskas101
+pubDatetime: 2025-09-20T17:30:00Z
+modDatetime:
+title: "Reverse Engineering: Clouds (yes, clouds.)"
+featured: true
+draft: false
+tags:
+    - graphics
+    - rendering
+    - clouds
+    - sky
+    - "sky: children of the light"
+description: "I tried recreating stylized clouds they way thatgamecompany did for their mobile game, Sky: Children of the Light. I got close. (ish)"
+canonicalURL: ""
+
+---
+
+import VideoCompare from "@/components/VideoCompare.astro";
+import Spoiler from "@/components/Spoiler.astro";
+
+
+
+# Clouds
+
+![Sky: Children of the Light (Playstation)](https://media.whiskas101.dev/2025/reverse_engineering_clouds/sky-children-of-the-light-background.jpg)
+<center>
+    <small>the first chapter, where you get your <b>wings</b></small>
+</center>
+
+> Undoubtedly *the* most majestic form of *H<sub>2</sub>O*. 
+> - <cite>whiskas101</cite>
+
+Clouds are hard to render. __Convincing__ clouds, that is. If you've ever tried your hand at drawing, you would know that the difficulty of drawing something is inherently tied to how it reflects light, how it absorbs light. Clouds? Well, they also absorb and scatter. It's particularly annoying because for most materials we can just get away with modelling how it reflects.
+
+
+Now imagine you're a game dev, in 2012, and you need to render these on a mobile phone. Also, make it interactive. Also, it has to run smooth, on an iPhone 6. Good luck.
+
+
+### Table of contents
+
+
+# What makes it so hard? 
+
+I will point the question back to you, what *wouldn't* make it hard? Everything about it is a headache. Interaction, lighting, self-shadowing, and *animation and it must run on decade old hardware?!*
+
+you see, clouds
+
+ - are not solid objects, they're volumes
+ - don't block light, they scatter it. <small>(more on this later)</small>
+
+ There's actually more, but in the context of *stylized* clouds, the ones that we see in this game, we don't actually encounter those issues, so I will omit them.
+
+
+# The Journey
+
+I started out ***extremely*** confident. Afterall, the game runs on a phone that's like ~8 years old, how hard could it be to run something like this on a _modern_ GPU? 
+> [!WARNING]
+> This is going to read like a story, a recollection of events as they happened. If you're strictly interested in the math, code and rendering techniques, you should use the table of contents to skip to the end.
+
+Some things stood out in the way **thatgamecompany** stylized their clouds. They are opaque. They don't have those wispy edges, not at a distance anyway. They look cartoonishly dense. If you pay close attention, you can't actually see any meaningful transparency to them. They might as well be white foamy water.
+
+## had anyone else attempted this?
+
+Yes, many people. It's a really pretty game afterall, people have tried recreating their specific style. I perused through many of them, among them the very first technique I tried was, based on a [reddit post](https://www.reddit.com/r/Unity3D/comments/1qg1ndn/cloud_shader_inspired_by_sky_children_of_light/)
+and also [this one](https://www.reddit.com/r/Unity3D/comments/iuy44e/skychildren_of_light_inspired_cloud_shader_in_urp/) discussing the very same clouds.
+
+
+My approach assumed those clouds to be a mesh, just like these reddit users. To quote the author of this one:
+
+
+>The clouds are mesh objects, the circular cloud is the standard sphere. The clouds in Sky:Children of Light were also mesh objects, but they used a "blob" technique to model them. I used clayxels to make the cloud "blob" and baked it into a mesh. Made in amplify shader editor, marked as opaque in the rendertype and transparent in queue. Depth fade gives a transparent illusion. Tessellation gives the cloud more detail. The only thing I cant figure out is how Sky was able to make the edges of the clouds have small particle like effects. Fresnel alpha doesnt work too well the way I tried, but maybe I just did it wrong and theres another way. 
+> - [u/907games](https://www.reddit.com/user/907games/)
+
+Now the reddit post author clearly stated with extreme confidence that it was indeed a <b>MESH</b>. And I had no reason to doubt him. So I quickly used some blobs in blender to mock up a rough shape of a cloud and put a simple vertex shader on top of it. This is the actual shape of the rough block I started with.
+
+![base cloud blob](https://media.whiskas101.dev/2025/reverse_engineering_clouds/cloud-blob.png)
+
+I just scrolled a 2D noise texture over it, and wrote a lazy fragment shader that simply maps the noise to the color at the point. No shading or lighting. Only geometry manipulation.
+
+```glsl file="cloud.gdshader"
+vertex(){
+    //just pseudocode
+    vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    float n = get_noise(world_pos):
+
+    VERTEX += NORMAL * (n - 0.5) * displace_strength;
+    // other stuff...
+}
+```
+Here we just resolve each vertex's `world_pos` and we shift it _outwards_ or _inwards_ by moving it along the `normal` at that point. How much to move it up or down is driven by a simple a uniform float variable.
+
+Doing that leads to something like this:
+
+<VideoCompare beforeSrc="/assets/temp/meshcloud.mp4" afterSrc="/assets/temp/meshcloud(wireframe).mp4" beforeLabel="normal" afterLabel="wireframe" />
+<center> a storm cloud (maybe?) </center>
+
+...aaand no one is impressed. This might look *passable* if it were a far away cloud, and **IF** we spent a lot more time lighting it correctly so it shines like a cloud and ensure players could never realistically get close to it, then maybe this approach can work. It's all about *tradeoffs* after all. This trick is cheap to run, looks convincing enough as a background prop, so what gives? 
+
+The core problem is that we're treating it like a solid object that moves. We have a solid surface rendered. We can fake transparency, but faking volume is harder here, given that it needs to be somewhat interactive (the camera should be able to go inside the cloud and not break the illusion).
+
+The main reason however, is that the goal is to recreate the specific *look* of thatgamecompany's clouds, not just any stylized cloud. In fact, [**Sea of Thieves**](https://www.seaofthieves.com) actually uses a similar geometry based approach to render their **fantastic** looking clouds. They use a lot of post processing to make them look like fluffy-puffy clouds, but the underlying method is the same.
+
+
+## meshes won't cut it.
+
+There's a problem with meshes. How big can your clouds get? Pretty big, atleast in _Sky_. What happens when a single triangle on your cloud is significantly bigger than your player?
+
+> I can make the resolutions higher, and prevent that from ever happening!
+
+But now you have too many triangles to render!
+
+> so we divide it up into chunks and render them at different LODs!
+
+But then you need to ensure the boundaries of the LODs don't fight each other, and the topology of the surface remains consistent. And not to mention, write an LOD system that can work efficiently and seamlessly. And, to make things cloudy-er how do you handle going INSIDE the cloud? Backface culling will make things look bad. Now you have to either turn off backface cull and basically double your triangle count being rendered, or you have to implement _yet another check, checking how far away you are from the surface of the clouds_ <Spoiler><small>(this is very similar to what they used! A signed distance field!)</small></Spoiler>
+
+It quickly becomes a binary decision of whether you're *inside* the cloud or not. And, the inside is *NOT* pretty.
+
+![cloud: inside view](https://media.whiskas101.dev/2025/reverse_engineering_clouds/cloud-inside-view.png)
+
+## a brutal realisation
+Clearly, the geniuses at *thatgamecompany* were doing something else. What I've summarized in the above paragraphs was a few weeks of dedicated attempts at playing around with different triangle counts, higher and lower resolution meshes, messing around with various LOD systems. I gave up. Decided that whatever I know now, clearly is not enough to recreate their art.
+
+Instead I went back to learning, hoping more knowledge would eventually solve this puzzle. I picked up **the bible**, Realtime Rendering the 4<sup>th</sup> edition, and hacked away at wrapping my head around the first few chapters. A brief mention of a technique called "Raymarching" caught my eye. I knew about this technique sure, but I had dismissed it purely because I knew shooting rays for every single pixel is too expensive! You're telling me that nearly a decade ago, they were planning to shoot rays from each pixel of an Iphone 6S? For each frame?! 
+
+> [!NOTE]
+> Some very quick maths tell us
+>
+> iPhone6S had a resolution of 1334 x 750 which would lead to 1,000,500
+> rays shot per frame, or ~30 million per second.
+> 
+> Ray marching involved doing multiple steps PER pixel. So that would increase the amount to
+> `max_steps` x `3 * 10^6`
+
+
+That math above is the entire reason I never considered ray marching as a potential approach for rendering these clouds. I knew ray marching could be used to render clouds, everyone does. Thats the first example they tell you about. I was just too sure of myself, it must have been some other technique.
+
+
+## it WAS raymarching!
+
+I was wrong, they had indeed used ray marching. A simple analysis of their frames showed a complete lack of geometry when rendering. Zero vertices on screen when the clouds were being shaded in. 
+
+
+
+This blog is still incomplete. I am collecting and organizing assets as I go along. Learning Astro on the way as well.
+
+
+
+
+
+

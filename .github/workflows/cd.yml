@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
+    environment:
+      name: prod
+      url: ${{ vars.SITE_URL }}
+
     steps:
       - name: "Checkout Repo"
         uses: actions/checkout@v4

@@ -51,7 +51,7 @@ jobs:
           eval $(ssh-agent -s)
           echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
 
-          rsync -avz --delete -e "ssh -p $PORT -o BatchMode=yes" dist/ "$USER@$HOST":/var/www/folio/
+          rsync -avz --delete -e "ssh -p $PORT -o BatchMode=yes -o ConnectTimeout=15 -vvv" dist/ "$USER@$HOST":/var/www/folio/
 
           ssh-agent -k
 

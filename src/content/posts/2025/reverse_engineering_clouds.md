@@ -53,7 +53,7 @@ I started out ***extremely*** confident. Afterall, the game runs on a phone that
 Some things stood out in the way **thatgamecompany** stylized their clouds. They are opaque. They don't have those wispy edges, not at a distance anyway. They look cartoonishly dense. If you pay close attention, you can't actually see any meaningful transparency to them. They might as well be white foamy water.
 
 The very first technique I tried was, based on a [reddit post](https://www.reddit.com/r/Unity3D/comments/1qg1ndn/cloud_shader_inspired_by_sky_children_of_light/)
-and also [this one](https://www.reddit.com/r/Unity3D/comments/iuy44e/skychildren_of_light_inspired_cloud_shader_in_urp/) discussing the very same clouds.^
+and also [this one](https://www.reddit.com/r/Unity3D/comments/iuy44e/skychildren_of_light_inspired_cloud_shader_in_urp/) discussing the very same clouds.
 
 <blockquote class="reddit-embed-bq" style="height:500px" data-embed-height="546">
 <a href="https://www.reddit.com/r/Unity3D/comments/1qg1ndn/cloud_shader_inspired_by_sky_children_of_light/">Cloud shader inspired by Sky: Children of Light</a><br> by

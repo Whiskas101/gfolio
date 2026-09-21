@@ -1,0 +1,61 @@
+name: CD
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: "Checkout Repo"
+        uses: actions/checkout@v4
+
+      - name: "Install pnpm"
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.3.0"
+
+      - name: "Set up Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: "Install Deps"
+        run: pnpm install --frozen-lockfile
+
+      - name: "Build"
+        run: pnpm run build
+
+      - name: "Deploy"
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOST: ${{ secrets.HOST }}
+          USER: ${{ secrets.USERNAME }}
+          PORT: ${{ secrets.PORT || 22 }}
+
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+          eval $(ssh-agent -s)
+          echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+
+          rsync -avz --delete -e "ssh -p $PORT -o BatchMode=yes" dist/ "$USER@$HOST":/var/www/folio/
+
+          ssh-agent -k
+
+
+
+
+

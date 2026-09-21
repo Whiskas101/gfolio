@@ -1,0 +1,128 @@
+---
+interface Props {
+  beforeSrc: string;
+  afterSrc: string;
+  beforeLabel?: string;
+  afterLabel?: string;
+}
+
+const {
+  beforeSrc,
+  afterSrc,
+  beforeLabel = "Original",
+  afterLabel = "Enhanced",
+} = Astro.props;
+---
+
+<div class="video-compare-wrapper my-6 select-none">
+  <div
+    class="video-compare-container border-skin-line relative aspect-video w-full overflow-hidden rounded-lg border bg-black"
+  >
+    <!-- bottom video (before) -->
+    <video
+      class="video-base absolute inset-0 h-full w-full object-cover"
+      src={beforeSrc}
+      muted
+      loop
+      playsinline
+      autoplay></video>
+    <span
+      class="pointer-events-none absolute bottom-3 left-3 z-10 rounded bg-black/60 px-2 py-1 text-xs text-white"
+    >
+      {beforeLabel}
+    </span>
+
+    <!-- top video (after - clipped via inset) -->
+    <div
+      class="video-clipped-container pointer-events-none absolute inset-0 h-full w-full overflow-hidden"
+    >
+      <video
+        class="video-overlay absolute inset-0 h-full w-full object-cover"
+        src={afterSrc}
+        muted
+        loop
+        playsinline
+        autoplay></video>
+      <span
+        class="pointer-events-none absolute right-3 bottom-3 z-10 rounded bg-black/60 px-2 py-1 text-xs text-white"
+      >
+        {afterLabel}
+      </span>
+    </div>
+
+    <!-- divider line, handle -->
+    <div
+      class="slider-divider pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 bg-white shadow-[0_0_10px_rgba(0,0,0,0.5)]"
+    >
+      <div
+        class="absolute top-1/2 left-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-xs font-bold text-black shadow-md"
+      >
+        ⇄
+      </div>
+    </div>
+
+    <!-- invisible range input for interaction -->
+    <input
+      type="range"
+      min="0"
+      max="100"
+      value="50"
+      class="slider-range absolute inset-0 z-30 m-0 h-full w-full cursor-ew-resize p-0 opacity-0"
+      aria-label="Video comparison slider"
+    />
+  </div>
+</div>
+
+<script>
+  function setupVideoComparisons() {
+    const wrappers = document.querySelectorAll(".video-compare-wrapper");
+
+    wrappers.forEach(wrapper => {
+      const v1 = wrapper.querySelector(".video-base") as HTMLVideoElement;
+      const v2 = wrapper.querySelector(".video-overlay") as HTMLVideoElement;
+      const clipped = wrapper.querySelector(
+        ".video-clipped-container"
+      ) as HTMLElement;
+      const divider = wrapper.querySelector(".slider-divider") as HTMLElement;
+      const slider = wrapper.querySelector(".slider-range") as HTMLInputElement;
+
+      if (!v1 || !v2 || !clipped || !divider || !slider) return;
+
+      // slider position logic
+      const updateSlider = (val: number) => {
+        clipped.style.clipPath = `polygon(${val}% 0, 100% 0, 100% 100%, ${val}% 100%)`;
+        divider.style.left = `${val}%`;
+      };
+
+      slider.addEventListener("input", e => {
+        updateSlider(Number((e.target as HTMLInputElement).value));
+      });
+      updateSlider(50);
+
+      // playback synchronization
+      const syncPlayback = () => {
+        if (Math.abs(v1.currentTime - v2.currentTime) > 0.05) {
+          v2.currentTime = v1.currentTime;
+        }
+      };
+
+      v1.addEventListener("play", () => v2.play());
+      v1.addEventListener("pause", () => v2.pause());
+      v1.addEventListener("seeking", () => {
+        v2.currentTime = v1.currentTime;
+      });
+      v1.addEventListener("timeupdate", syncPlayback);
+
+      // start both
+      Promise.all([v1.play(), v2.play()]).catch(() => {
+        // autoplay policy fallback: mute is required for autoplay
+        v1.muted = true;
+        v2.muted = true;
+      });
+    });
+  }
+
+  // runs on initial load and view transitions (if enabled in astro)
+  setupVideoComparisons();
+  document.addEventListener("astro:page-load", setupVideoComparisons);
+</script>
